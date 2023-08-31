@@ -1,5 +1,7 @@
 # The effects of mutation and recombination rate heterogeneity on the inference of demography and the distribution of fitness effects
-Vivak Soni, Susanne P. Pfeifer, Jeffrey D. Jensen.
+
+Vivak Soni, Susanne P. Pfeifer, and Jeffrey D. Jensen.
+
 Contact: vsoni11@asu.edu
 
 Repository contains scripts to run generate input files and run demographic and DFE inference on SLiM output, as per Soni et al. 2023.
