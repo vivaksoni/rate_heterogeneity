@@ -1,0 +1,1 @@
+Use jupyter notebook to generate variable rates. See manuscript for details of rates.
