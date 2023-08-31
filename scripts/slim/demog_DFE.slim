@@ -1,0 +1,142 @@
+//Slim script to run a chromosomal region with 128 genes, each comprised of 4 588bp exons, 3 563bp introns, and separated by a 3811bp intergenic region
+//Demographic changes are instantaneous at a fixed time of change.
+//Get DFE realisations from file: f=($(grep -w {sim1} DFE_realisations.txt | awk '{print $2,$3,$4,$5}'))
+//How to run:
+//slim -d d_seed=1 -d d_scaling_factor=200 -d d_Nanc=1000000 -d d_Ncur=2000000 -d "rmap='fixed'" -d "mmap='fixed'" -d "d_folder='/home/vivak/rr_mu_demography_DFE/'" -d d_sampling_time=17 -d "d_simID='1Mb'" -d "d_repID='1'" -d d_nGenes=127 -d d_f0="${f[0]}" -d d_f1="${f[1]}" -d d_f2="${f[2]}" -d d_f3="${f[3]}" demog_DFE.slim
+
+initialize()
+{
+    setSeed(d_seed);
+    //define constants:
+    defineConstant("scale", d_scaling_factor);
+    defineConstant("Na", asInteger(round(d_Nanc/scale)));
+    defineConstant("Nc", asInteger(round(d_Ncur/scale)));
+    defineConstant("samplingTime", d_sampling_time);
+    defineConstant("gen_burnin", 16 * Na); //16N burnin (after which instantaneous size change occurs
+    defineConstant("gen_stop", samplingTime * Na); //Amount of further evolution before sampling set by user input
+    //Chromosome with 127 genes, each comprised of 4 588bp exons, 3 563bp introns, and separated by a 3811bp intergenic region
+	 //Total chromosome length: 997204
+    defineConstant("exonLength", 588); 
+    defineConstant("exonsPerGene", 4);
+    defineConstant("intronsPerGene", 3);
+    defineConstant("intronLength", 563);
+    defineConstant("geneLength", (exonLength * exonsPerGene) + (intronLength * intronsPerGene)); 
+    defineConstant("intergenicLength", 3811);
+    defineConstant("totalGenes", d_nGenes);
+
+
+	//MUTATION RATE//
+	//fixed recombination rate (keightley et al. 2014 average)
+	if (mmap=='fixed')
+		{
+		mu = 2.8e-9 * scale;
+		initializeMutationRate(mu);
+		}
+	//variable rate (from input file)
+	else
+		{
+		lines = readFile(mmap);
+	   mu = NULL;
+	   coords = NULL;
+	   for (line in lines)
+	   	{
+	      components = strsplit(line,"\t");
+	      coords = c(coords, asInteger(components[0]));
+	      mu = c(mu, asFloat(components[1]));
+	      }
+	   mu = mu * scale;
+	   coords = c(coords[1:(size(coords)-1)] - 1, 1000000);
+	   initializeMutationRate(mu, coords);
+	   }
+    
+    // mutation types: 
+    //2Nes = [0, -1, -10, -100, -10000], s = [0.0, -0.0001, -0.001, -0.01, -1]
+    initializeMutationType("m1", 0.5, "f", 0.0); //selectively neutral
+    initializeMutationType("m2", 0.5, "s", "return runif(1, -10/(Na*2), -1/(Na*2));"); //weakly deleterious (1<2Nes<10)
+    initializeMutationType("m3", 0.5, "s", "return runif(1, -100/(Na*2), -10/(Na*2));"); //moderately deleterious (10<2Nes<100)
+    initializeMutationType("m4", 0.5, "s", "return runif(1, -1000/(Na*2), -100/(Na*2));"); //strongly deleterious (100<2Nes<1000)
+    // Genomic elements:
+    initializeGenomicElementType("g1", m1, 1.0); //intergenic
+    initializeGenomicElementType("g2", m1, 1.0); //intron
+    initializeGenomicElementType("g3", c(m1, m2, m3, m4), c(d_f0, d_f1, d_f2, d_f3)); //exon
+
+    
+   //Initialise genomic element
+   //Chromosome with {totalGenes} no. ofgenes, each comprised of {exonsPerGene} {exonLength}bp exons; 
+   //{intronsPerGene} {intronLength}bp introns, and separated by a {intergenicLength}bp intergenic region
+   //Loop through number of genes
+	for (gene in 1:totalGenes)
+		{
+		//Set gene start
+		geneStart = (gene-1) * (geneLength+intergenicLength) + 1;
+		//Loop through elements within gene (ie number of exons)
+		for (element in 1:exonsPerGene)
+			{
+			//Set exonStart and end coordinates
+			exonStart = geneStart + (exonLength * (element-1)) + (intronLength * (element-1));
+			exonEnd = exonStart+(exonLength-1);
+			initializeGenomicElement(g3, exonStart, exonEnd);
+			//Each gene contains one less intron than exons
+			if (element < exonsPerGene)
+				{
+				//Set intron coordinates
+				intronStart = exonStart + exonLength;
+				intronEnd = intronStart+(intronLength-1);
+				initializeGenomicElement(g2, intronStart, intronEnd);
+				}
+			}
+		//Set intergenic region coordinates	
+		intergenicStart = exonEnd + 1;
+		intergenicEnd = intergenicStart + (intergenicLength-1);
+		initializeGenomicElement(g1, intergenicStart, intergenicEnd);
+		}   
+ 
+    
+	//RECOMBINATION RATE//
+	//fixed recombination rate (Comeron et al. 2012 average) (halved to get sex-averaged rate).
+	if (rmap=='fixed')
+		{
+		rr = (2.32/2) * scale * 1e-8;
+		initializeRecombinationRate(rr);
+		}
+	//variable rate (from input file - already adjusted for sex-average rate)
+	else
+		{
+		lines = readFile(rmap);
+	   rr = NULL;
+	   coords = NULL;
+	   for (line in lines)
+	   	{
+	      components = strsplit(line,"\t");
+	      coords = c(coords, asInteger(components[0]));
+	      rr = c(rr, asFloat(components[1]));
+	      }
+	   rr = rr * scale * 1e-8;
+	   coords = c(coords[1:(size(coords)-1)] - 1, 1000000);
+	   initializeRecombinationRate(rr, coords);
+	   }
+}
+
+// part 1 (burn-in for gen_burnin (=16Na) generations): create a population of Na individuals
+1 {
+    sim.addSubpop("p1", Na);
+    //Set variables s1 and s2 for gen_burnin and gen_stop
+    sim.rescheduleScriptBlock(s1, start=gen_burnin, end=gen_burnin);
+    sim.rescheduleScriptBlock(s2, start=gen_stop, end=gen_stop);
+}
+// part 2: instantaneous population size change: reaches size N_cur
+s1 late(){
+    newSize = Nc;
+    p1.setSubpopulationSize(asInteger(newSize));
+}
+//print genotypes of 100 individuals selected randomly without replacement:
+//gen_stop = gen_burnin + time of change
+s2 late() {
+    p1.outputMSSample(100, F, "*", d_folder + "/" + d_simID + "_rep" + d_repID + ".ms", F);
+    //print size of population to check
+    print(p1.individualCount);
+
+    //print all fixed mutations
+    sim.outputFixedMutations(d_folder + "/" + d_simID + "_rep" + d_repID + ".fixed", append=F);
+    sim.simulationFinished();
+}
